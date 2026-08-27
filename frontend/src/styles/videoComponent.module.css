@@ -28,24 +28,61 @@
     border-radius: 16px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     border: 2px solid rgba(255, 255, 255, 0.1);
-    transition: transform 0.3s ease;
+    transition: all 0.3s ease;
+    cursor: pointer;
 }
 
 .conferenceView video:hover {
     transform: scale(1.02);
 }
 
+.conferenceView.hasPinned {
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.pinnedVideo {
+    width: 80%;
+    max-height: 60vh;
+    margin-bottom: 20px;
+    object-fit: contain !important;
+}
+
+.unpinnedGrid {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.unpinnedGrid video {
+    max-height: 15vh;
+}
+
 .meetUserVideo {
     position: absolute;
     bottom: 120px;
-    right: 2rem;
+    left: 2rem;
     height: 180px;
     width: auto;
     border-radius: 16px;
     box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
     border: 2px solid var(--accent);
     z-index: 10;
-    transition: transform 0.3s ease;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.meetUserVideo.pinned {
+    position: relative;
+    bottom: auto;
+    left: auto;
+    height: 60vh;
+    width: 80%;
+    max-width: 1000px;
+    margin: 0 auto 20px auto;
+    object-fit: contain;
+    z-index: 15;
 }
 
 .buttonContainers {

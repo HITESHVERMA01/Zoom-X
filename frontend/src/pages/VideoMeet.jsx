@@ -58,6 +58,11 @@ export default function VideoMeetComponent() {
     const videoRef = useRef([])
 
     let [videos, setVideos] = useState([])
+    let [pinnedVideoId, setPinnedVideoId] = useState(null);
+
+    const togglePin = (id) => {
+        setPinnedVideoId(prev => prev === id ? null : id);
+    };
 
     // TODO
     // if(isChrome() === false) {
@@ -122,15 +127,7 @@ export default function VideoMeetComponent() {
         }
     };
 
-    useEffect(() => {
-        if (video !== undefined && audio !== undefined) {
-            getUserMedia();
-            console.log("SET STATE HAS ", video, audio);
-
-        }
-
-
-    }, [video, audio])
+    // Removed buggy useEffect that caused camera resetting
     let getMedia = () => {
         setVideo(videoAvailable);
         setAudio(audioAvailable);
@@ -385,11 +382,19 @@ export default function VideoMeetComponent() {
 
     let handleVideo = () => {
         setVideo(!video);
-        // getUserMedia();
+        if (window.localStream) {
+            window.localStream.getVideoTracks().forEach(track => {
+                track.enabled = !video;
+            });
+        }
     }
     let handleAudio = () => {
-        setAudio(!audio)
-        // getUserMedia();
+        setAudio(!audio);
+        if (window.localStream) {
+            window.localStream.getAudioTracks().forEach(track => {
+                track.enabled = !audio;
+            });
+        }
     }
 
     useEffect(() => {
@@ -476,23 +481,49 @@ export default function VideoMeetComponent() {
 
                 <div className={styles.meetVideoContainer}>
 
-                    <div className={styles.conferenceView}>
-                        {videos.map((video) => (
+                    <div className={`${styles.conferenceView} ${pinnedVideoId ? styles.hasPinned : ''}`}>
+                        {videos.filter(v => v.socketId === pinnedVideoId).map((video) => (
                             <video
-                                key={video.socketId}
+                                key={`pinned-${video.socketId}`}
                                 data-socket={video.socketId}
+                                className={styles.pinnedVideo}
                                 ref={ref => {
                                     if (ref && video.stream) {
                                         ref.srcObject = video.stream;
                                     }
                                 }}
                                 autoPlay
+                                onClick={() => togglePin(video.socketId)}
                             >
                             </video>
                         ))}
+                        
+                        <div className={pinnedVideoId ? styles.unpinnedGrid : ''} style={{ width: '100%', display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '15px' }}>
+                            {videos.filter(v => v.socketId !== pinnedVideoId).map((video) => (
+                                <video
+                                    key={video.socketId}
+                                    data-socket={video.socketId}
+                                    ref={ref => {
+                                        if (ref && video.stream) {
+                                            ref.srcObject = video.stream;
+                                        }
+                                    }}
+                                    autoPlay
+                                    onClick={() => togglePin(video.socketId)}
+                                >
+                                </video>
+                            ))}
+                        </div>
                     </div>
 
-                    <video className={styles.meetUserVideo} ref={localVideoref} autoPlay muted></video>
+                    <video 
+                        className={`${styles.meetUserVideo} ${pinnedVideoId === 'local' ? styles.pinned : ''}`} 
+                        ref={localVideoref} 
+                        autoPlay 
+                        muted
+                        onClick={() => togglePin('local')}
+                        title="Click to Pin/Unpin"
+                    ></video>
 
                     {showModal ? <div className={styles.chatRoom}>
 
