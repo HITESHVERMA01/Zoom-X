@@ -232,6 +232,17 @@ export default function VideoMeetComponent() {
     let gotMessageFromServer = (fromId, message) => {
         var signal = JSON.parse(message)
 
+        if (signal['video-status'] !== undefined) {
+            setVideos(videos => videos.map(v => 
+                v.socketId === fromId ? { ...v, videoOff: !signal['video-status'] } : v
+            ));
+        }
+        if (signal['user-info'] !== undefined) {
+            setVideos(videos => videos.map(v => 
+                v.socketId === fromId ? { ...v, username: signal['user-info'] } : v
+            ));
+        }
+
         if (fromId !== socketIdRef.current) {
             if (signal.sdp) {
                 connections[fromId].setRemoteDescription(new RTCSessionDescription(signal.sdp)).then(() => {
@@ -271,6 +282,9 @@ export default function VideoMeetComponent() {
 
             socketRef.current.on('user-joined', (id, clients) => {
                 clients.forEach((socketListId) => {
+                    
+                    // Send our username to everyone so they know who we are
+                    socketRef.current.emit('signal', socketListId, JSON.stringify({ 'user-info': username }));
 
                     connections[socketListId] = new RTCPeerConnection(peerConfigConnections)
                     // Wait for their ice candidate       
@@ -364,11 +378,43 @@ export default function VideoMeetComponent() {
     }
 
     let handleVideo = () => {
-        setVideo(!video);
-        if (window.localStream) {
-            window.localStream.getVideoTracks().forEach(track => {
-                track.enabled = !video;
-            });
+        const newVideoState = !video;
+        setVideo(newVideoState);
+        
+        // Notify others
+        for (let id in connections) {
+            if (id === socketIdRef.current) continue;
+            socketRef.current.emit('signal', id, JSON.stringify({ 'video-status': newVideoState }));
+        }
+
+        if (!newVideoState) {
+            // Turning off: completely stop the track to turn off the hardware light
+            if (window.localStream) {
+                window.localStream.getVideoTracks().forEach(track => track.stop());
+            }
+        } else {
+            // Turning on: request a new stream and replace tracks
+            if (navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then(stream => {
+                        let newVideoTrack = stream.getVideoTracks()[0];
+                        if (window.localStream) {
+                            if (window.localStream.getVideoTracks().length > 0) {
+                                window.localStream.removeTrack(window.localStream.getVideoTracks()[0]);
+                            }
+                            window.localStream.addTrack(newVideoTrack);
+                            localVideoref.current.srcObject = window.localStream;
+                            
+                            for (let id in connections) {
+                                if (id === socketIdRef.current) continue;
+                                let senders = connections[id].getSenders();
+                                let vSender = senders.find(s => s.track && s.track.kind === 'video');
+                                if (vSender) vSender.replaceTrack(newVideoTrack);
+                            }
+                        }
+                    })
+                    .catch(e => console.log(e));
+            }
         }
     }
     let handleAudio = () => {
@@ -475,48 +521,58 @@ export default function VideoMeetComponent() {
                 <div className={styles.meetVideoContainer}>
 
                     <div className={`${styles.conferenceView} ${pinnedVideoId ? styles.hasPinned : ''}`}>
-                        {videos.filter(v => v.socketId === pinnedVideoId).map((video) => (
-                            <video
-                                key={`pinned-${video.socketId}`}
-                                data-socket={video.socketId}
-                                className={styles.pinnedVideo}
-                                ref={ref => {
-                                    if (ref && video.stream) {
-                                        ref.srcObject = video.stream;
-                                    }
-                                }}
-                                autoPlay
-                                onClick={() => togglePin(video.socketId)}
-                            >
-                            </video>
+                        {videos.filter(v => v.socketId === pinnedVideoId).map((vid) => (
+                            <div key={`pinned-${vid.socketId}`} className={styles.videoWrapper} onClick={() => togglePin(vid.socketId)}>
+                                <video
+                                    data-socket={vid.socketId}
+                                    className={styles.pinnedVideo}
+                                    ref={ref => { if (ref && vid.stream) { ref.srcObject = vid.stream; } }}
+                                    autoPlay
+                                    style={{ display: vid.videoOff ? 'none' : 'block' }}
+                                />
+                                {vid.videoOff && (
+                                    <div className={`${styles.pinnedVideo} ${styles.avatarOverlay}`}>
+                                        <div className={styles.avatarCircle}>{vid.username ? vid.username.charAt(0).toUpperCase() : '?'}</div>
+                                        <span className={styles.avatarName}>{vid.username || 'User'}</span>
+                                    </div>
+                                )}
+                            </div>
                         ))}
                         
                         <div className={pinnedVideoId ? styles.unpinnedGrid : ''} style={{ width: '100%', display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '15px' }}>
-                            {videos.filter(v => v.socketId !== pinnedVideoId).map((video) => (
-                                <video
-                                    key={video.socketId}
-                                    data-socket={video.socketId}
-                                    ref={ref => {
-                                        if (ref && video.stream) {
-                                            ref.srcObject = video.stream;
-                                        }
-                                    }}
-                                    autoPlay
-                                    onClick={() => togglePin(video.socketId)}
-                                >
-                                </video>
+                            {videos.filter(v => v.socketId !== pinnedVideoId).map((vid) => (
+                                <div key={vid.socketId} className={styles.videoWrapper} onClick={() => togglePin(vid.socketId)}>
+                                    <video
+                                        data-socket={vid.socketId}
+                                        ref={ref => { if (ref && vid.stream) { ref.srcObject = vid.stream; } }}
+                                        autoPlay
+                                        style={{ display: vid.videoOff ? 'none' : 'block' }}
+                                    />
+                                    {vid.videoOff && (
+                                        <div className={styles.avatarOverlay}>
+                                            <div className={styles.avatarCircle}>{vid.username ? vid.username.charAt(0).toUpperCase() : '?'}</div>
+                                            <span className={styles.avatarName}>{vid.username || 'User'}</span>
+                                        </div>
+                                    )}
+                                </div>
                             ))}
                         </div>
                     </div>
 
-                    <video 
-                        className={`${styles.meetUserVideo} ${pinnedVideoId === 'local' ? styles.pinned : ''}`} 
-                        ref={localVideoref} 
-                        autoPlay 
-                        muted
-                        onClick={() => togglePin('local')}
-                        title="Click to Pin/Unpin"
-                    ></video>
+                    <div className={`${styles.meetUserVideo} ${pinnedVideoId === 'local' ? styles.pinned : ''}`} onClick={() => togglePin('local')} title="Click to Pin/Unpin">
+                        <video 
+                            ref={localVideoref} 
+                            autoPlay 
+                            muted
+                            style={{ display: !video ? 'none' : 'block', width: '100%', height: '100%', objectFit: 'cover', borderRadius: '16px' }}
+                        />
+                        {!video && (
+                            <div className={styles.avatarOverlay} style={{ borderRadius: '16px' }}>
+                                <div className={styles.avatarCircle}>{username ? username.charAt(0).toUpperCase() : '?'}</div>
+                                <span className={styles.avatarName}>{username || 'You'}</span>
+                            </div>
+                        )}
+                    </div>
 
                     {showModal ? <div className={styles.chatRoom}>
 
